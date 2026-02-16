@@ -92,6 +92,8 @@
 #include "i_interface.h"
 #include "fs_findfile.h"
 
+// GTL
+void GTL_PollAcsRemovedEvents();
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -1327,6 +1329,7 @@ void G_Ticker ()
 	{
 	case GS_LEVEL:
 		P_Ticker ();
+		GTL_PollAcsRemovedEvents();
 		primaryLevel->automap->Ticker ();
 		break;
 

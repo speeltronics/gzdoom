@@ -132,6 +132,9 @@ EXTERN_CVAR(Bool, log_vgafont)
 EXTERN_CVAR(Bool, dlg_vgafont)
 CVAR(Int, vid_renderer, 1, 0)	// for some stupid mods which threw caution out of the window...
 
+// GTL
+int GTL_InitSocket(const char* host, const char* port);
+
 void DrawHUD();
 void D_DoAnonStats();
 void I_DetectOS();
@@ -3752,6 +3755,12 @@ static int D_DoomMain_Internal (void)
 		delete iwad_man;	// now we won't need this anymore
 		iwad_man = NULL;
 		if (ret != 0) return ret;
+
+		// GTL
+		const char* host = "localhost";
+		const char* port = "31600";
+		int iport = 31600;
+		int srs = GTL_InitSocket(host, port);
 
 		D_DoAnonStats();
 		I_UpdateWindowTitle();
