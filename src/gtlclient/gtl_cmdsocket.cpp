@@ -81,6 +81,8 @@ struct GTLActiveCmd
     int aTimer = 0;            // original timer seconds
     int64_t expireMs = 0;      // nowMs() + aTimer*1000 if aTimer>0
 
+    bool keepAlive = false;
+
     // used only for respawn
     int respawnTimer = 0;      // remaining seconds at wipe time
 };
@@ -325,6 +327,10 @@ void GTL_WipeThings() {
     // Build respawn list
     for (auto& st : snapshot)
     {
+        if (!st.keepAlive) {
+            continue;
+        }
+
         AActor* a = FindByTid(st.tid);
         if (!a) {
             // It’s already gone (picked up, died, timed out, etc.)
@@ -424,6 +430,7 @@ int processCommand(json j) {
         int objectIdx = j["oIdx"].template get<int>();
         int aTimer = j["aTimer"].template get<int>();
         int flFriendly = j["flFriendly"].template get<int>();
+        bool keepAlive = j.value("keepAlive", false);
 
         uint32_t newTid = ++g_tidCounter;
         if (g_tidCounter >= GTL_MAX_TID) {
@@ -439,6 +446,7 @@ int processCommand(json j) {
         st.kindHealthParam = health;
         st.aTimer = aTimer;
         st.expireMs = (aTimer > 0) ? (GTLWsClient::nowMs() + (int64_t)aTimer * 1000) : 0;
+        st.keepAlive = keepAlive;
 
         if (nickname.empty()) nickname = " ";
 
