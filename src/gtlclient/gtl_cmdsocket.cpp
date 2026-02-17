@@ -60,6 +60,7 @@
 CVAR(Int, gtl_evt_seq, 0, CVAR_MOD);
 CVAR(Int, gtl_evt_tid, 0, CVAR_MOD);
 CVAR(Int, gtl_evt_reason, 0, CVAR_MOD); // 1=timeout, 2=death_fade
+CVAR(Int, gtl_suppress_actor_hud, 0, CVAR_MOD);
 //CUSTOM_CVAR(Int, gtl_evt_seq, 0, 0);
 //CUSTOM_CVAR(Int, gtl_evt_tid, 0, 0);
 //CUSTOM_CVAR(Int, gtl_evt_reason, 0, 0);
@@ -67,8 +68,32 @@ CVAR(Int, gtl_evt_reason, 0, CVAR_MOD); // 1=timeout, 2=death_fade
 #include <unordered_map>
 #include <mutex>
 
+struct GTLActiveCmd
+{
+    std::string id;
+    int tid = 0;
+
+    std::string nickname;
+    int objectIdx = 0;
+    int flFriendly = 0;
+
+    int kindHealthParam = 0;   // >0 = monster (show health, fade on death), 0 = item
+    int aTimer = 0;            // original timer seconds
+    int64_t expireMs = 0;      // nowMs() + aTimer*1000 if aTimer>0
+
+    // used only for respawn
+    int respawnTimer = 0;      // remaining seconds at wipe time
+};
+
 static std::mutex g_tidMapMu;
 static std::unordered_map<int, std::string> g_tidToCmdId;
+
+static std::unordered_map<std::string, GTLActiveCmd> g_activeById;  // id  -> full state
+static std::deque<GTLActiveCmd> g_respawnQ;
+
+constexpr auto GTL_MIN_TID = 15000000;
+constexpr auto GTL_MAX_TID = 16000000; // keep this global so it never collides
+static uint32_t g_tidCounter = GTL_MIN_TID; // keep this global so it never collides
 
 // JSON
 #include "nlohmann/json.hpp"
@@ -195,27 +220,145 @@ static std::unique_ptr<GTLWsClient> g_ws;
 
 static constexpr int GTL_REASON_LEVEL_RELOAD = 4;
 
-void GTL_WipeThings() {
-    if (!g_ws) return;
+//static AActor* FindByTid(int tid) {
+//    auto it = Level->GetActorIterator(tid);
+//    AActor* actor;
+//    actor = it.Next();
+//    return actor;
+//}
 
-    std::vector<std::string> ids;
+static AActor* FindByTid(int tid) {
+    if (tid <= 0) return nullptr;
+    if (gamestate != GS_LEVEL) return nullptr;
+    if (!players[0].mo) return nullptr;
+
+    FLevelLocals* lev = players[0].mo->Level;   // <- always the current map
+    if (!lev) return nullptr;
+
+    auto it = lev->GetActorIterator(tid);
+    return it.Next(); // nullptr if none
+}
+
+// --------------------------------------------------------------------------------------
+// Gate: only process when gameplay is in a safe state
+// --------------------------------------------------------------------------------------
+
+int okToProcessCommands() {
+    // if (!AppActive) return 0;
+
+    if (gamestate != GS_LEVEL)            return 0;
+    if (menuactive != MENU_Off)           return 0;
+    if (automapactive)                    return 0;
+    if (!viewactive)                      return 0;
+    if (gameaction != ga_nothing)         return 0;
+    if (pauseext)                         return 0;
+    if (players[0].mo == NULL)            return 0;
+    if (players[0].mo->health <= 0)       return 0;
+    return 1;
+}
+
+void GTL_TickRespawns() {
+    if (!okToProcessCommands()) return;
+    if (g_respawnQ.empty()) return;
+
+    GTLActiveCmd st = g_respawnQ.front();
+    g_respawnQ.pop_front();
+
+    uint32_t newTid = ++g_tidCounter;
+    if (g_tidCounter > GTL_MAX_TID) {
+        newTid = GTL_MIN_TID;
+    }
+    st.tid = newTid;
 
     {
         std::lock_guard<std::mutex> lk(g_tidMapMu);
-        ids.reserve(g_tidToCmdId.size());
-        for (auto& kv : g_tidToCmdId)
-            ids.push_back(kv.second);
+        g_tidToCmdId[newTid] = st.id;
+        g_activeById[st.id] = st;
+    }
 
+    const int idx0 = getLetterIndex(st.nickname.empty() ? ' ' : st.nickname[0]);
+
+    {
+        std::string tcmd = "puke -250 " + std::to_string(newTid) + " " +
+            std::to_string(idx0) + " " + std::to_string(st.objectIdx) + " " +
+            std::to_string(st.flFriendly);
+        PukeScript(FCommandLine(tcmd.c_str()));
+    }
+
+    for (int i = 1; i < (int)st.nickname.size(); ++i)
+    {
+        int lIndex = getLetterIndex(st.nickname[i]);
+        std::string ccmd = "puke -269 " + std::to_string(newTid) + " " +
+            std::to_string(i) + " " + std::to_string(lIndex);
+        PukeScript(FCommandLine(ccmd.c_str()));
+    }
+
+    {
+        std::string ccmd2 = "puke -259 " + std::to_string(newTid) + " " +
+            std::to_string(st.nickname.size()) + " " +
+            std::to_string(st.kindHealthParam) + " " +
+            std::to_string(st.respawnTimer);
+        PukeScript(FCommandLine(ccmd2.c_str()));
+    }
+}
+
+bool IsGTLHudId(uint32_t id) {
+    return id >= GTL_MIN_TID && id <= GTL_MAX_TID;
+}
+
+void GTL_WipeThings() {
+    const int64_t now = GTLWsClient::nowMs();
+
+    std::vector<GTLActiveCmd> snapshot;
+    {
+        std::lock_guard<std::mutex> lk(g_tidMapMu);
+        snapshot.reserve(g_activeById.size());
+        for (auto& kv : g_activeById) snapshot.push_back(kv.second);
+
+        //// IMPORTANT: clear current map bookkeeping
+        g_activeById.clear();
         g_tidToCmdId.clear();
     }
 
-    // queue "played" for everything still outstanding
-    for (auto& id : ids)
-        g_ws->notifyPlayed(id, GTL_REASON_LEVEL_RELOAD);
+    g_respawnQ.clear();
 
-    // optional: clear any other per-level tracking
-    gtlActors.clear();
-    // if you have any other queues/maps tied to active TIDs, clear them here too
+    // Build respawn list
+    for (auto& st : snapshot)
+    {
+        AActor* a = FindByTid(st.tid);
+        if (!a) {
+            // It’s already gone (picked up, died, timed out, etc.)
+            // If you want: send played here with a "gone_on_wipe" reason.
+            continue;
+        }
+
+        // If it's a monster command and it's already dead, don't respawn it
+        if (st.kindHealthParam > 0 && a->health <= 0)
+            continue;
+
+        const int remSec = a->gtlatimer;
+
+        if (st.aTimer > 0) // command was a timed thing
+        {
+            if (remSec <= 0)
+                continue; // expired already
+
+            st.respawnTimer = remSec;
+        }
+        else
+        {
+            // "no timer" mode
+            st.respawnTimer = 0;
+        }
+
+        // preserve current monster health (optional)
+        if (st.kindHealthParam > 0)
+            st.kindHealthParam = std::max(1, (int)a->health);
+
+        g_respawnQ.push_back(st);
+    }
+
+    //gtlActors.clear(); // optional cleanup
 }
 
 void GTL_PollAcsRemovedEvents()
@@ -230,6 +373,8 @@ void GTL_PollAcsRemovedEvents()
 
     const int tid = gtl_evt_tid;
     const int reason = gtl_evt_reason; // 1=timeout, 2=death_fade
+
+    //GTL_WipeThings();
 
     std::string cmdId;
     {
@@ -256,28 +401,10 @@ void GTL_PollAcsRemovedEvents()
 }
 
 // --------------------------------------------------------------------------------------
-// Gate: only process when gameplay is in a safe state
-// --------------------------------------------------------------------------------------
-
-int okToProcessCommands() {
-    // if (!AppActive) return 0;
-
-    if (gamestate != GS_LEVEL)            return 0;
-    if (menuactive != MENU_Off)           return 0;
-    if (automapactive)                    return 0;
-    if (!viewactive)                      return 0;
-    if (gameaction != ga_nothing)         return 0;
-    if (pauseext)                         return 0;
-    if (players[0].mo == NULL)            return 0;
-    if (players[0].mo->health <= 0)       return 0;
-    return 1;
-}
-
-// --------------------------------------------------------------------------------------
 // Core command handling (kept same, now calls g_ws->notifyPlayed(id))
 // --------------------------------------------------------------------------------------
 
-int processCommand(json j, int& tid) {
+int processCommand(json j) {
     try {
 
         if (!okToProcessCommands())
@@ -298,19 +425,33 @@ int processCommand(json j, int& tid) {
         int aTimer = j["aTimer"].template get<int>();
         int flFriendly = j["flFriendly"].template get<int>();
 
-        tid += 1;
+        uint32_t newTid = ++g_tidCounter;
+        if (g_tidCounter >= GTL_MAX_TID) {
+            newTid = GTL_MIN_TID;
+        }
+
+        GTLActiveCmd st;
+        st.id = id;
+        st.tid = newTid;
+        st.nickname = nickname;
+        st.objectIdx = objectIdx;
+        st.flFriendly = flFriendly;
+        st.kindHealthParam = health;
+        st.aTimer = aTimer;
+        st.expireMs = (aTimer > 0) ? (GTLWsClient::nowMs() + (int64_t)aTimer * 1000) : 0;
 
         if (nickname.empty()) nickname = " ";
 
         {
             std::lock_guard<std::mutex> lk(g_tidMapMu);
-            g_tidToCmdId[tid] = id;
+            g_tidToCmdId[newTid] = id;
+            g_activeById[id] = st;
         }
 
         GTLActor tActor;
         tActor.id = id;
         tActor.name = nickname;
-        tActor.tid = tid;
+        tActor.tid = newTid;
         gtlActors.push_back(tActor);
 
         int idx = getLetterIndex(tActor.name[0]);
@@ -322,7 +463,7 @@ int processCommand(json j, int& tid) {
 
         // initial setup (first letter, type, friendly)
         {
-            std::string tcmd = "puke -250 " + std::to_string(tid) + " " +
+            std::string tcmd = "puke -250 " + std::to_string(newTid) + " " +
                 std::to_string(idx) + " " +
                 std::to_string(objectIdx) + " " +
                 std::to_string(flFriendly);
@@ -333,7 +474,7 @@ int processCommand(json j, int& tid) {
         // push remaining nickname chars
         for (int i = 1; i < (int)nickname.size(); ++i) {
             int lIndex = getLetterIndex(nickname[i]);
-            std::string gcmd = "puke -269 " + std::to_string(tid) + " " +
+            std::string gcmd = "puke -269 " + std::to_string(newTid) + " " +
                 std::to_string(i) + " " + std::to_string(lIndex);
             FCommandLine argv(gcmd.c_str());
             PukeScript(argv);
@@ -341,7 +482,7 @@ int processCommand(json j, int& tid) {
 
         // finalize (length, health, timer)
         {
-            std::string gcmd2 = "puke -259 " + std::to_string(tid) + " " +
+            std::string gcmd2 = "puke -259 " + std::to_string(newTid) + " " +
                 std::to_string(nickname.size()) + " " +
                 std::to_string(health) + " " +
                 std::to_string(aTimer);
@@ -388,7 +529,7 @@ std::string getGameCode() {
 int GTL_InitSocket(const char* /*host*/, const char* /*port*/) {
     g_ws = std::make_unique<GTLWsClient>(
         // processCommand
-        [](const nlohmann::json& j, int& tid) -> int { return processCommand(j, tid); },
+        [](const nlohmann::json& j) -> int { return processCommand(j); },
         // okToProcess
         []() -> int { return okToProcessCommands(); },
         // getGameCode

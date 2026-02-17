@@ -4047,6 +4047,7 @@ enum
 	APROP_SoundClass			= 47,
 	APROP_FriendlySeeBlocks		= 48,
 	APROP_WaterDepth			= 49,
+	APROP_GTLAliveTimer			= 1000,
 };
 
 // These are needed for ACS's APROP_RenderStyle
@@ -4111,6 +4112,10 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		{
 			actor->Die(activator, activator);
 		}
+		break;
+
+	case APROP_GTLAliveTimer:
+		actor->gtlatimer = value;
 		break;
 
 	case APROP_Speed:
@@ -4340,6 +4345,7 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	switch (property)
 	{
 	case APROP_Health:		return actor->health;
+	case APROP_GTLAliveTimer: return actor->gtlatimer;
 	case APROP_Speed:		return DoubleToACS(actor->Speed);
 	case APROP_Damage:		return actor->GetMissileDamage(0,1);
 	case APROP_DamageFactor:return DoubleToACS(actor->DamageFactor);
@@ -4423,7 +4429,6 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_SoundClass:	return GlobalACSStrings.AddString(S_GetSoundClass(actor));
 	case APROP_FriendlySeeBlocks: return actor->friendlyseeblocks;
 	case APROP_WaterDepth: return DoubleToACS(actor->waterdepth);
-
 	default:				return 0;
 	}
 }
@@ -4445,6 +4450,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 
 		// Straightforward integer values:
 		case APROP_Health:
+		case APROP_GTLAliveTimer:
 		case APROP_Speed:
 		case APROP_Damage:
 		case APROP_DamageFactor:

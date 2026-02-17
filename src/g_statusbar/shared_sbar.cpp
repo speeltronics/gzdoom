@@ -1318,10 +1318,59 @@ void DBaseStatusBar::ShowPop(int pop)
 	}
 }
 
+//static const int GTL_TID_BASE = 200000000;
+//static inline bool IsGTLHudId(int id) { return id >= GTL_TID_BASE; }
+bool IsGTLHudId(uint32_t id);
+void DBaseStatusBar::GTL_PurgeHudMessages() {
+	for (int layer = 0; layer < NUM_HUDMSGLAYERS; ++layer)
+	{
+		DHUDMessageBase* prev = nullptr;
+		DHUDMessageBase* cur = Messages[layer];
 
+		while (cur)
+		{
+			DHUDMessageBase* next = cur->Next; // DBaseStatusBar is friend, so this is OK
 
-void DBaseStatusBar::SerializeMessages(FSerializer &arc)
-{
+			const uint32_t sbarId = cur->SBarID;
+			const bool hasId = (sbarId & 0xFF000000) == 0xFF000000;
+			const uint32_t userId = sbarId & 0x00FFFFFF;
+
+			const bool isGTL = IsGTLHudId(userId);
+
+			if (isGTL)
+			{
+				// unlink
+				if (prev) prev->Next = next;
+				else Messages[layer] = next;
+
+				// fully detach
+				cur->Next = nullptr;
+				cur->SBarID = 0;
+
+				// optional: mark for GC; safe to omit if you’re unsure
+				// cur->Destroy();
+			}
+			else
+			{
+				prev = cur;
+			}
+
+			cur = next;
+		}
+	}
+}
+
+//void DBaseStatusBar::SerializeMessages(FSerializer &arc)
+//{
+//	arc.Array("hudmessages", Messages, 3, true);
+//}
+void DBaseStatusBar::SerializeMessages(FSerializer& arc) {
+	// IMPORTANT: only purge when WRITING (saving)
+	if (arc.isWriting())   // if your FSerializer uses a different name, see note below
+	{
+		GTL_PurgeHudMessages();
+	}
+
 	arc.Array("hudmessages", Messages, 3, true);
 }
 

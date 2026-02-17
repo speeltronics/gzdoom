@@ -16,7 +16,7 @@ class GTLWsClient {
 public:
     using json = nlohmann::json;
 
-    using ProcessCommandFn = std::function<int(const json&, int&)>; // processCommand(j, tid)
+    using ProcessCommandFn = std::function<int(const json&)>; // processCommand(j, tid)
     using OkToProcessFn = std::function<int()>;                 // okToProcessCommands() (1/0)
     using GetGameCodeFn = std::function<std::string()>;         // getGameCode()
 
@@ -42,11 +42,13 @@ public:
 
     void notifyPlayed(const std::string& commandId, int reason = 0);
 
+    static int64_t nowMs();
+
 private:
     int  handleIncomingText(const std::string& s);
     void pumpLoop();
 
-    static int64_t nowMs();
+    
 
     std::mutex removedMu_;
     std::deque<std::pair<std::string, int>> removedQ_;
@@ -94,7 +96,4 @@ private:
     std::atomic<int64_t> lastAskMs_{ 0 };
     static constexpr int64_t kAskTimeoutMs = 3000; // 3 seconds
 
-    
-    // TID counter (only touched on pump thread)
-    int tid_{ 200000000 };
 };

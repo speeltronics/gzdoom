@@ -78,6 +78,8 @@ EXTERN_CVAR(Float, hud_scalefactor)
 
 CVAR(Bool, m_simpleoptions, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
+void GTL_WipeThings();
+
 typedef void(*hfunc)();
 DMenu* CreateMessageBoxMenu(DMenu* parent, const char* message, int messagemode, bool playsound, FName action = NAME_None, hfunc handler = nullptr);
 bool OkForLocalization(FTextureID texnum, const char* substitute);
@@ -234,7 +236,7 @@ bool M_SetSpecialMenu(FName& menu, int param)
 		NewGameStartupInfo.Skill = param;
 		[[fallthrough]];
 	case NAME_StartgameConfirmed:
-
+		GTL_WipeThings();
 		G_DeferedInitNew (&NewGameStartupInfo);
 		if (gamestate == GS_FULLCONSOLE)
 		{

@@ -382,6 +382,7 @@ public:
 
 	static void AddBlend (float r, float g, float b, float a, float v_blend[4]);
 
+	void GTL_PurgeHudMessages();
 	// do not make this a DObject Serialize function because it's not used like one!
 	void SerializeMessages(FSerializer &arc);
 

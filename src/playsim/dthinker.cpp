@@ -565,19 +565,56 @@ bool FThinkerList::DoDestroyThinkers()
 //
 //==========================================================================
 
-void FThinkerList::SaveList(FSerializer &arc)
-{
+static constexpr int GTL_TID_BASE = 40000;
+
+static inline bool GTL_ShouldSkipSave(DThinker* t) {
+	if (!t) return false;
+
+	if (!t->IsKindOf(RUNTIME_CLASS(AActor)))
+		return false;
+
+	auto a = static_cast<AActor*>(t);
+
+	// Only skip YOUR spawned GTL actors.
+	// (Use a dedicated tid range so you don't hit map actors.)
+	return a->tid >= GTL_TID_BASE;
+}
+
+void FThinkerList::SaveList(FSerializer& arc) {
 	auto node = GetHead();
 	if (node != nullptr)
 	{
 		while (!(node->ObjectFlags & OF_Sentinel))
 		{
-			assert(node->NextThinker != nullptr && !(node->NextThinker->ObjectFlags & OF_EuthanizeMe));
+			// IMPORTANT: cache next first (safer if serialization touches links)
+			auto next = node->NextThinker;
+			assert(next != nullptr && !(next->ObjectFlags & OF_EuthanizeMe));
+
+			// Only skip on WRITE (saving). Don't mess with load logic.
+			if (arc.isWriting() && GTL_ShouldSkipSave(node))
+			{
+				node = next;
+				continue;
+			}
+
 			::Serialize<DThinker>(arc, nullptr, node, nullptr);
-			node = node->NextThinker;
+			node = next;
 		}
 	}
 }
+//void FThinkerList::SaveList(FSerializer &arc)
+//{
+//	auto node = GetHead();
+//	if (node != nullptr)
+//	{
+//		while (!(node->ObjectFlags & OF_Sentinel))
+//		{
+//			assert(node->NextThinker != nullptr && !(node->NextThinker->ObjectFlags & OF_EuthanizeMe));
+//			::Serialize<DThinker>(arc, nullptr, node, nullptr);
+//			node = node->NextThinker;
+//		}
+//	}
+//}
 
 //==========================================================================
 //

@@ -94,7 +94,8 @@
 
 // GTL
 void GTL_PollAcsRemovedEvents();
-
+void GTL_TickRespawns();
+void GTL_WipeThings();
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
 
@@ -1330,6 +1331,7 @@ void G_Ticker ()
 	case GS_LEVEL:
 		P_Ticker ();
 		GTL_PollAcsRemovedEvents();
+		GTL_TickRespawns();
 		primaryLevel->automap->Ticker ();
 		break;
 
@@ -2029,6 +2031,8 @@ void FinishLoadingCVars();
 
 void G_DoLoadGame ()
 {
+	GTL_WipeThings();
+
 	SetupLoadingCVars();
 	bool hidecon;
 

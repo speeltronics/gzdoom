@@ -100,6 +100,8 @@
 
 #include "texturemanager.h"
 
+//void GTL_WipeThings();
+
 void STAT_StartNewGame(const char *lev);
 void STAT_ChangeLevel(const char *newl, FLevelLocals *Level);
 FString STAT_EpisodeName();
@@ -558,6 +560,9 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 	bool wantFast;
 	int i;
 
+	// GTL
+	//GTL_WipeThings();
+
 	// did we have any level before?
 	if (primaryLevel->info != nullptr)
 		staticEventManager.WorldUnloaded(FString());	// [MK] don't pass the new map, as it's not a level transition
@@ -656,6 +661,7 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 	
 	if (!savegamerestore)
 		startpos = laststartpos = 0;
+
 	G_DoLoadLevel (mapname, startpos, false, !savegamerestore);
 
 	if (!savegamerestore && (gameinfo.gametype == GAME_Strife || (SBarInfoScript[SCRIPT_CUSTOM] != nullptr && SBarInfoScript[SCRIPT_CUSTOM]->GetGameType() == GAME_Strife)))

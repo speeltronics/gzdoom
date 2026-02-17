@@ -268,7 +268,7 @@ void GTLWsClient::pumpLoop()
 
             if (doRun && processCmd_)
             {
-                int rc = processCmd_(cmd, tid_);
+                int rc = processCmd_(cmd);
 
                 if (rc == 1)
                 {
