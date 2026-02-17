@@ -134,6 +134,7 @@ CVAR(Int, vid_renderer, 1, 0)	// for some stupid mods which threw caution out of
 
 // GTL
 int GTL_InitSocket(const char* host, const char* port);
+void GTL_WipeThings();
 
 void DrawHUD();
 void D_DoAnonStats();
@@ -976,6 +977,9 @@ void D_Display ()
 		{
 			// save the current screen if about to wipe
 			wipestart = screen->WipeStartScreen();
+
+			// GTL
+			GTL_WipeThings();
 
 			switch (wipegamestate)
 			{

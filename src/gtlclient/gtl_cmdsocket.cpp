@@ -178,13 +178,13 @@ int getLetterIndex(char letter) {
     return 0;
 }
 
-struct CCActor {
+struct GTLActor {
     int tid = 0;
     std::string id;
     std::string name = "";
 };
 
-std::vector<CCActor> ccActors;
+std::vector<GTLActor> gtlActors;
 
 TObjPtr<AActor*>    activator;
 FLevelLocals* Level;
@@ -192,6 +192,31 @@ FLevelLocals* Level;
 static int g_last_evt_seq = 0;
 
 static std::unique_ptr<GTLWsClient> g_ws;
+
+static constexpr int GTL_REASON_LEVEL_RELOAD = 4;
+
+void GTL_WipeThings() {
+    if (!g_ws) return;
+
+    std::vector<std::string> ids;
+
+    {
+        std::lock_guard<std::mutex> lk(g_tidMapMu);
+        ids.reserve(g_tidToCmdId.size());
+        for (auto& kv : g_tidToCmdId)
+            ids.push_back(kv.second);
+
+        g_tidToCmdId.clear();
+    }
+
+    // queue "played" for everything still outstanding
+    for (auto& id : ids)
+        g_ws->notifyPlayed(id, GTL_REASON_LEVEL_RELOAD);
+
+    // optional: clear any other per-level tracking
+    gtlActors.clear();
+    // if you have any other queues/maps tied to active TIDs, clear them here too
+}
 
 void GTL_PollAcsRemovedEvents()
 {
@@ -244,7 +269,7 @@ int okToProcessCommands() {
     if (gameaction != ga_nothing)         return 0;
     if (pauseext)                         return 0;
     if (players[0].mo == NULL)            return 0;
-    if (players[0].mo->health == 0)       return 0;
+    if (players[0].mo->health <= 0)       return 0;
     return 1;
 }
 
@@ -282,11 +307,11 @@ int processCommand(json j, int& tid) {
             g_tidToCmdId[tid] = id;
         }
 
-        CCActor tActor;
+        GTLActor tActor;
         tActor.id = id;
         tActor.name = nickname;
         tActor.tid = tid;
-        ccActors.push_back(tActor);
+        gtlActors.push_back(tActor);
 
         int idx = getLetterIndex(tActor.name[0]);
 
@@ -308,19 +333,19 @@ int processCommand(json j, int& tid) {
         // push remaining nickname chars
         for (int i = 1; i < (int)nickname.size(); ++i) {
             int lIndex = getLetterIndex(nickname[i]);
-            std::string ccmd = "puke -269 " + std::to_string(tid) + " " +
+            std::string gcmd = "puke -269 " + std::to_string(tid) + " " +
                 std::to_string(i) + " " + std::to_string(lIndex);
-            FCommandLine argv(ccmd.c_str());
+            FCommandLine argv(gcmd.c_str());
             PukeScript(argv);
         }
 
         // finalize (length, health, timer)
         {
-            std::string ccmd2 = "puke -259 " + std::to_string(tid) + " " +
+            std::string gcmd2 = "puke -259 " + std::to_string(tid) + " " +
                 std::to_string(nickname.size()) + " " +
                 std::to_string(health) + " " +
                 std::to_string(aTimer);
-            FCommandLine argv2(ccmd2.c_str());
+            FCommandLine argv2(gcmd2.c_str());
             PukeScript(argv2);
         }
 
