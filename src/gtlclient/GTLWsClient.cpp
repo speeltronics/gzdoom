@@ -4,14 +4,12 @@
 
 using json = GTLWsClient::json;
 
-int64_t GTLWsClient::nowMs()
-{
+int64_t GTLWsClient::nowMs() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-bool GTLWsClient::markSeenIfNew_(const std::string& id)
-{
+bool GTLWsClient::markSeenIfNew_(const std::string& id) {
     if (id.empty()) return true; // can't dedupe without an id
 
     std::lock_guard<std::mutex> lk(seenMu_);
@@ -35,8 +33,7 @@ bool GTLWsClient::markSeenIfNew_(const std::string& id)
     return true;
 }
 
-void GTLWsClient::start(const std::string& url)
-{
+void GTLWsClient::start(const std::string& url) {
     if (running_.exchange(true)) return;
 
     url_ = url;
@@ -99,8 +96,7 @@ void GTLWsClient::start(const std::string& url)
     pumpThread_ = std::thread([this] { pumpLoop(); });
 }
 
-void GTLWsClient::stop()
-{
+void GTLWsClient::stop() {
     if (!running_.exchange(false)) return;
 
     reconnectRequested_.store(false);
@@ -113,14 +109,12 @@ void GTLWsClient::stop()
     ix::uninitNetSystem();
 }
 
-void GTLWsClient::notifyPlayed(const std::string& commandId, int reason)
-{
+void GTLWsClient::notifyPlayed(const std::string& commandId, int reason) {
     std::lock_guard<std::mutex> lk(playedMu_);
     playedQ_.push_back({ commandId, reason });
 }
 
-int GTLWsClient::handleIncomingText(const std::string& s)
-{
+int GTLWsClient::handleIncomingText(const std::string& s) {
     if (s.empty()) return -1;
 
     // Legacy tokens
@@ -199,8 +193,7 @@ int GTLWsClient::handleIncomingText(const std::string& s)
     }
 }
 
-void GTLWsClient::pumpLoop()
-{
+void GTLWsClient::pumpLoop() {
     while (running_)
     {
         // Reconnect if requested and time reached
@@ -272,7 +265,7 @@ void GTLWsClient::pumpLoop()
 
                 if (rc == 1)
                 {
-                    // DEFER: game wasn’t safe. Put it back at the front.
+                    // DEFER: game wasnt safe. Put it back at the front.
                     std::lock_guard<std::mutex> lk(pendingMu_);
                     pendingQ_.push_front(cmd);
                     isCommandAvailable_.store(false);
